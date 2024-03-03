@@ -1,0 +1,148 @@
+%% Controllo Mixsyn
+
+% Importiamo il sistema dal file "Modello schema a blocchi.mat"
+
+Delta = load("Modello schema a blocchi.mat","Delta").Delta;
+G_attuata_nom = load("Modello schema a blocchi.mat","G_attuata_nom").G_attuata_nom;
+wi = load("Pesi incertezza.mat","W").W;
+Wi = [wi,0;
+      0,wi];
+
+s = tf('s');
+% Pesi sulla funzione di sensitivity
+wb_p1 = 0.1;
+wp1 = wb_p1/(s+wb_p1);
+
+wp2 = 0.1;
+
+Wp = [wp1, 0;
+      0, wp2];
+Wpss = ss(Wp);
+
+
+% Pesi sullo sforzo di controllo u
+wu = 0.01*s/(s+0.1);
+Wu = [wu, 0;
+      0, wu];
+Wuss = ss(Wu);
+
+
+% Pesi sulla funzione a ciclo chiuso T
+Wt = 0.5*s/(s+100)*eye(2);
+Wtss = ss(Wt);
+
+
+
+% creo la variabili per sysic (con il controllore mixsyn)
+systemnames = 'G_attuata_nom Wpss Wuss Wtss';
+inputvar = '[r(2);u(2)]'; % sarebbe [w u]'
+input_to_G_attuata_nom = '[u]';
+input_to_Wtss = '[G_attuata_nom]';
+input_to_Wpss = '[r-G_attuata_nom]';
+input_to_Wuss = '[u]';
+outputvar = '[Wpss;Wuss;Wtss;r-G_attuata_nom]'; % sarebbe [z v]'
+
+sysoutname = 'P_mixsyn'; % P generalizzata nel caso mixsyn (nominale)
+cleanupsysic = 'yes';
+sysic;
+
+clear systemnames inputvar input_to_G_attuata_nom input_to_Wtss 
+clear input_to_Wpss input_to_Wuss outputvar sysoutname cleanupsysic
+
+[K_ms,CL,gamma]=hinfsyn(P_mixsyn,2,2);  % Algoritmo ottimo di sintesi H inf
+gamma
+
+N = lft(P_mixsyn,K_ms);   % Matrice N nel caso nominale
+
+%% Mu-analysis
+
+% Caso Nominale
+    % Stabilità
+[stabmarg_Nmix,wcu_Nmix,info_Nmix] = robuststab(N);
+
+    % Performance
+[perfmarg_Nmix,wcu_perf_Nmix,info_perf_Nmix]=robustperf(N);
+
+
+
+% Caso perturbato (analisi di robustezza)
+
+% Dobbiamo ricavare il sistema perturbato a ciclo chiuso considerando
+% il controllore mixsyn
+systemnames = 'G_attuata_nom Wi Wpss Wuss Wtss';
+inputvar = '[u_delta(2);r(2);u(2)]'; % ingresso [u_delta w u]'
+
+input_to_G_attuata_nom = '[u]'; % lista dei sistemi che abbiamo dichiarato
+input_to_Wtss = '[G_attuata_nom + u_delta]';
+input_to_Wi = '[u]';
+input_to_Wpss = '[r-G_attuata_nom-u_delta]';
+input_to_Wuss = '[u]';
+
+% uscite [y_delta z v]'
+outputvar = '[Wi;Wpss;Wuss;Wtss;r-G_attuata_nom-u_delta]';
+
+sysoutname = 'P_mixsyn_p';  % P generalizzata nel caso mixsyn (perturbato)
+cleanupsysic = 'yes';
+sysic;
+
+clear systemnames inputvar input_to_G_attuata_nom input_to_Wtss 
+clear input_to_Wpss input_to_Wuss outputvar sysoutname cleanupsysic
+clear input_to_Wi
+
+P_p = lft(Delta,P_mixsyn_p);      % Aggiungiamo il blocco Delta al modello
+N_p = lft(P_p,K_ms);       % Ricaviamo la matrice N del modello perturbato
+
+
+    % Stabilità
+[stabmarg_Nmix_p,wcu_Nmix_p,info_Nmix_p] = robuststab(N_p);
+
+    % Performance
+[perfmarg_Nmix_p,wcu_perf_Nmix_p,info_perf_Nmix_p] = robustperf(N_p);
+
+
+%%Plot
+% 
+% figure
+% sigma(N(1:2,:),1/Wp);
+% legend('S','1/Wp');
+% 
+% figure
+% sigma(N(3:4,:),1/Wu);
+% legend('KS','1/Wu');
+% 
+% figure
+% sigma(N(5:6,:),1/Wt);
+% legend('T','1/Wt');
+% 
+% figure
+% sigma(Wp,Wu,Wt);
+% legend("wp",'Wu','Wt');
+
+% figure
+% plot(out.phi_nl);
+% str = 'Andamento di ${\phi}$ per modello non lineare';
+% title(str,'Interpreter','latex')
+% xlabel('Time [s]')
+% ylabel('Gradi [°]')
+% 
+% figure
+% plot(out.phi_dot_nl);
+% str = 'Andamento di ${\dot\phi}$ per modello non lineare';
+% title(str,'Interpreter','latex')
+% xlabel('Time [s]')
+% ylabel('Gradi [°]')
+
+figure
+plot(out.phi_plot_h_inf);
+str = ['Andamento di ${\phi}$ per modello lineare'];
+title(str,'Interpreter','latex')
+xlabel('Time [s]')
+ylabel('Gradi [°]')
+
+figure
+plot(out.phi_dot_plot_h_inf);
+str = ['Andamento di ${\dot\phi}$ per modello lineare'];
+title(str,'Interpreter','latex')
+xlabel('Time [s]')
+ylabel('Gradi [°]')
+
